@@ -109,6 +109,7 @@ class StackStringFunctionHandler:
         building_stack_str (StackString): temporary StackString for while it is being parsed
         ins (Instruction): the current instruction in the function
         counter (int): the number of instructions iterated through in the current function
+        previous_stack_offset (long): the previous stack offset to make sure the stack string is being properly constructed
     """
 
     MAX_STEPS = 1000
@@ -127,6 +128,7 @@ class StackStringFunctionHandler:
         self.building_stack_str = StackString()
         self.ins = None
         self.counter = 0
+        self.previous_stack_offset = None
 
     def find_local_variable(self, addr):
         """
@@ -138,33 +140,55 @@ class StackStringFunctionHandler:
         for local_variable in self.current_func.getLocalVariables():
             if local_variable.getMinAddress() == addr:
                 return local_variable
+                
+    def init_building_stack_str(self):
+        """
+        Initialise a building stack string
+        """
 
-    def stack_char_handler(self, stack_char):
+        self.building_stack_str.addr = self.ins.getOperandReferences(0)[0].getToAddress()
+
+        for variable in self.current_func.getLocalVariables():
+
+            if variable.getStackOffset() == self.building_stack_str.addr.getOffset():
+                self.building_stack_str.var = variable
+
+    def stack_char_handler(self, stack_char, stack_offset):
         """
         Handler to deal with parsed characters being placed on the stack
 
         Args:
             stack_char (char): a single char parsed from off the stack
+            stack_offset (int): the offset onto the stack to prevent random character being added to the StackString
         """
         # Check the scalar is in a "nice" ASCII range
         if stack_char >= 0x2E and stack_char <= 0x7A:
 
             # Save the stack address of the start of the stack string
             if not self.building_stack_str.addr:
-                self.building_stack_str.addr = self.ins.getOperandReferences(0)[0].getToAddress()
-
-                for variable in self.current_func.getLocalVariables():
-
-                    if variable.getStackOffset() == self.building_stack_str.addr.getOffset():
-                        self.building_stack_str.var = variable
-
-            # Add the character to the saved stack string
-            self.building_stack_str.val += chr(stack_char)
+                self.init_building_stack_str()
+                        
+            if not self.previous_stack_offset:
+                
+                self.previous_stack_offset = stack_offset
+                self.building_stack_str.val += chr(stack_char)
+                
+            elif self.previous_stack_offset and (stack_offset - self.previous_stack_offset) == 1:
+            
+                self.building_stack_str.val += chr(stack_char)
+                self.previous_stack_offset = stack_offset
+                
+            else:
+                self.building_stack_str = StackString()
+                self.init_building_stack_str()
+                
+                self.building_stack_str.val += chr(stack_char)
+                self.previous_stack_offset = stack_offset
 
         # If the scalar is NULL, then it is likely the end of the string
-        elif stack_char == 0 and len(self.building_stack_str.val) > 0:
+        elif stack_char == 0 and len(self.building_stack_str.val) >= self.MIN_STACK_STRING_LENGTH:
 
-            print("Stack string found:")
+            print("\nStack string found:")
             print("Value: %s" % (self.building_stack_str.val))
             print("Address: %s" % (str(self.building_stack_str.addr)))
             print("Variable: %s\n" % (str(self.building_stack_str.var)))
@@ -192,6 +216,7 @@ class StackStringFunctionHandler:
             # Add to the stack strings, and clear the building stack string
             self.stack_strs.append(self.building_stack_str)
             self.building_stack_str = StackString()
+            self.previous_stack_offset = None
 
     def call_handler(self, stack_adjustment):
         """
@@ -276,10 +301,11 @@ class StackStringFunctionHandler:
                 # Case: If a scalar is being moved into a register offset
                 if type(op1[0]) == Register and type(op2[0]) == Scalar:
 
-                    if op1[0].getName() in self.STACK_REGISTERS:
+                    if op1[0].getName() in self.STACK_REGISTERS and op1[1] and type(op1[1]) == Scalar:
 
                         stack_char = op2[0].getUnsignedValue()
-                        self.stack_char_handler(stack_char)
+                        stack_offset = op1[1].getSignedValue()
+                        self.stack_char_handler(stack_char, stack_offset)
 
             elif self.ins.getMnemonicString() == "CALL":
                 self.call_handler(stack_adjustment)
