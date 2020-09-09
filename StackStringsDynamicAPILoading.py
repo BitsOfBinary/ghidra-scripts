@@ -163,21 +163,14 @@ class StackStringFunctionHandler:
         """
         # Check the scalar is in a "nice" ASCII range
         if stack_char >= 0x2E and stack_char <= 0x7A:
-
-            # Save the stack address of the start of the stack string
-            if not self.building_stack_str.addr:
-                self.init_building_stack_str()
-                        
-            if not self.previous_stack_offset:
                 
-                self.previous_stack_offset = stack_offset
-                self.building_stack_str.val += chr(stack_char)
-                
-            elif self.previous_stack_offset and (stack_offset - self.previous_stack_offset) == 1:
+            # If we're building a StackString, make sure we've only incremented one byte on the stack
+            if self.previous_stack_offset and (stack_offset - self.previous_stack_offset) == 1:
             
                 self.building_stack_str.val += chr(stack_char)
                 self.previous_stack_offset = stack_offset
                 
+            # Otherwise, start building a new StackString, and save off the stack offset
             else:
                 self.building_stack_str = StackString()
                 self.init_building_stack_str()
@@ -306,6 +299,9 @@ class StackStringFunctionHandler:
                         stack_char = op2[0].getUnsignedValue()
                         stack_offset = op1[1].getSignedValue()
                         self.stack_char_handler(stack_char, stack_offset)
+                        
+                # TODO: case where a register value is being moved onto the stack
+                # This could be if a single character is stored in a register, and moved onto the stack that way instead of as a literal
 
             elif self.ins.getMnemonicString() == "CALL":
                 self.call_handler(stack_adjustment)
@@ -382,9 +378,7 @@ class StackStringProgramHandler:
         self.get_data_type_managers()
         self.get_windows_data_type_manager()
 
-        self.dyn_api_handler = DynamicAPILoadingHandler(
-            self.windows_data_type_manager, self.category_path
-        )
+        self.dyn_api_handler = DynamicAPILoadingHandler(self.windows_data_type_manager, self.category_path)
 
         if choice_code == 0:
             current_func = getFunctionContaining(currentAddress)
