@@ -280,7 +280,7 @@ class StackStringFunctionHandler:
         # Check that the instruction exists first to prevent errors being thrown
         while (
             self.ins
-            and self.ins.getAddress() != self.end_of_func_addr
+            and self.ins.getAddress() < self.end_of_func_addr
             and self.counter != self.MAX_STEPS
         ):
 
@@ -294,7 +294,7 @@ class StackStringFunctionHandler:
                 # Case: If a scalar is being moved into a register offset
                 if type(op1[0]) == Register and type(op2[0]) == Scalar:
 
-                    if op1[0].getName() in self.STACK_REGISTERS and op1[1] and type(op1[1]) == Scalar:
+                    if op1[0].getName() in self.STACK_REGISTERS and len(op1) > 1 and type(op1[1]) == Scalar:
 
                         stack_char = op2[0].getUnsignedValue()
                         stack_offset = op1[1].getSignedValue()
